@@ -3,6 +3,15 @@
 -- ========================================
 -- PAQUETE USUARIO INICIO
 CREATE OR REPLACE PACKAGE PKG_USUARIOS AS
+
+-- CONSTANTES DE CÓDIGOS DE RESULTADO
+    CONS_EXITOSO               CONSTANT NUMBER := 0;
+    CONS_ERROR_GENERICO        CONSTANT NUMBER := 1;
+    CONS_USUARIO_EXISTE        CONSTANT NUMBER := 2;
+    CONS_USUARIO_NO_EXISTE     CONSTANT NUMBER := 3;
+    CONS_ERROR_VALIDACION      CONSTANT NUMBER := 4;
+    CONS_ROL_NO_EXISTE         CONSTANT NUMBER := 5;
+    CONS_EMAIL_EXISTE          CONSTANT NUMBER := 6;
     -- CREAR USUARIO
     PROCEDURE CREAR_USUARIO(
         USER_NOMBRE       IN COSMETICDEV.TA_USUARIOS.NOMBRE%TYPE,
@@ -28,6 +37,13 @@ CREATE OR REPLACE PACKAGE PKG_USUARIOS AS
         USER_TELEFONO  IN COSMETICDEV.TA_USUARIOS.TELEFONO%TYPE,
         USER_RESULTADO OUT NUMBER,
      	USER_MENSAJE   OUT VARCHAR2
+    );
+
+    -- ELIMINAR USUARIO
+    PROCEDURE ELIMINAR_USUARIO(
+        USER_ID        IN COSMETICDEV.TA_USUARIOS.ID_USUARIO%TYPE,
+        USER_RESULTADO OUT NUMBER,
+        USER_MENSAJE   OUT VARCHAR2
     );
     
    -- ACTUALIZAR ACCESO USUARIO
@@ -79,13 +95,58 @@ CREATE OR REPLACE PACKAGE BODY PKG_USUARIOS AS
      	USER_MENSAJE      OUT VARCHAR2
     ) 
     AS
+        VL_ROL_EXISTS NUMBER;
     BEGIN
+        -- VALIDACIONES INICIALES
+        IF USER_NOMBRE IS NULL OR TRIM(USER_NOMBRE) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El nombre del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        
+        IF USER_EMAIL IS NULL OR TRIM(USER_EMAIL) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El email es requerido';
+            RETURN;
+        END IF;
+        
+        IF USER_PASSWORD IS NULL OR TRIM(USER_PASSWORD) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'La contraseña es requerida';
+            RETURN;
+        END IF;
+        
+        -- VALIDAR QUE EL ROL EXISTA
+        SELECT COUNT(*) INTO V_ROL_EXISTS FROM TA_ROLES WHERE ID_ROL = USER_ID_ROL;
+        
+        IF VL_ROL_EXISTS = 0 THEN
+            USER_RESULTADO := CONS_ROL_NO_EXISTE;
+            USER_MENSAJE := 'El rol especificado no existe.';
+            RETURN;
+        END IF;
+
+        -- INSERTAR NUEVO USUARIO
         INSERT INTO TA_USUARIOS 
             (NOMBRE, AP_PATERNO, AP_MATERNO, FECHA_NACIMIENTO, TELEFONO, USUARIO, EMAIL, PASSWORD_HASH, ESTADO, ID_ROL, USUARIO_ACTUALIZACION)
         VALUES 
             (USER_NOMBRE, USER_PATERNO, USER_MATERNO, USER_FECHA_NAC, USER_TELEFONO, USER_USUARIO, USER_EMAIL, USER_PASSWORD, 'ACTIVO', USER_ID_ROL, USER);
         
         COMMIT;
+
+        USER_RESULTADO := CONS_EXITOSO;
+        USER_MENSAJE := 'Usuario creado exitosamente. Usuario: ' || USER_USUARIO;
+    
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            USER_RESULTADO := CONS_USUARIO_EXISTE;
+            USER_MENSAJE := 'El usuario o email ya existe en el sistema';
+            ROLLBACK;
+        WHEN OTHERS THEN
+            USER_RESULTADO := CONS_ERROR_GENERICO;
+            USER_MENSAJE := 'Error al crear usuario: ' || SQLERRM;
+            ROLLBACK;
+
     END CREAR_USUARIO;
 
     -- ACTUALIZAR DATOS PERSONALES
@@ -101,11 +162,41 @@ CREATE OR REPLACE PACKAGE BODY PKG_USUARIOS AS
     ) 
     AS
     BEGIN
+        -- VALIDACIONES INICIALES
+        IF USER_ID IS NULL THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El ID del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        IF USER_NOMBRE IS NULL OR TRIM(USER_NOMBRE) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El nombre del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        -- ACTUALIZAR DATOS
         UPDATE TA_USUARIOS SET NOMBRE = USER_NOMBRE, AP_PATERNO = USER_PATERNO, AP_MATERNO = USER_MATERNO, FECHA_NACIMIENTO = USER_FECHA_NAC, 
             TELEFONO = USER_TELEFONO, FECHA_ACTUALIZACION = SYSDATE
         WHERE ID_USUARIO = USER_ID;
         
-        COMMIT;
+        -- VALIDAR SI EL USUARIO EXISTE
+        IF SQL%ROWCOUNT = 0 THEN
+            USER_RESULTADO := CONS_USUARIO_NO_EXISTE;
+            USER_MENSAJE := 'El usuario con ID ' || USER_ID || ' no existe';
+            ROLLBACK;
+        ELSE
+            COMMIT;
+            USER_RESULTADO := CONS_EXITOSO;
+            USER_MENSAJE := 'Datos personales actualizados correctamente';
+        END IF;
+    
+    EXCEPTION
+        WHEN OTHERS THEN
+            USER_RESULTADO := CONS_ERROR_GENERICO;
+            USER_MENSAJE := 'Error al actualizar usuario: ' || SQLERRM;
+            ROLLBACK;
+        
     END UPDATE_USUARIO;
 
         -- ACTUALIZAR ACCESO USUARIO
@@ -120,12 +211,94 @@ CREATE OR REPLACE PACKAGE BODY PKG_USUARIOS AS
     )
     AS
     BEGIN
+        -- VALIDACIONES INICIALES
+        IF USER_ID IS NULL THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El ID del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        IF USER_USUARIO IS NULL OR TRIM(USER_USUARIO) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El nombre de usuario es requerido';
+            RETURN;
+        END IF;
+        
+        IF USER_PASSWORD IS NULL OR TRIM(USER_PASSWORD) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'La contraseña es requerida';
+            RETURN;
+        END IF;
+        
+        IF USER_EMAIL IS NULL OR TRIM(USER_EMAIL) = '' THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El email es requerido';
+            RETURN;
+        END IF;
+
+        -- ACTUALIZAR ACCESO
         UPDATE TA_USUARIOS SET USUARIO = USER_USUARIO, PASSWORD_HASH = USER_PASSWORD, ESTADO = USER_ESTADO, 
         	EMAIL = USER_EMAIL, FECHA_ACTUALIZACION = SYSDATE
         WHERE ID_USUARIO = USER_ID;
         
-        COMMIT;
+        -- VALIDAR SI EL USUARIO EXISTE
+        IF SQL%ROWCOUNT = 0 THEN
+            USER_RESULTADO := CONS_USUARIO_NO_EXISTE;
+            USER_MENSAJE := 'El usuario con ID ' || USER_ID || ' no existe';
+            ROLLBACK;
+        ELSE
+            COMMIT;
+            USER_RESULTADO := CONS_EXITOSO;
+            USER_MENSAJE := 'Acceso del usuario actualizado correctamente';
+        END IF;
+    
+    EXCEPTION
+        WHEN DUP_VAL_ON_INDEX THEN
+            USER_RESULTADO := CONS_USUARIO_EXISTE;
+            USER_MENSAJE := 'El usuario o email ya existe en el sistema';
+            ROLLBACK;
+        WHEN OTHERS THEN
+            USER_RESULTADO := CONS_ERROR_GENERICO;
+            USER_MENSAJE := 'Error al actualizar acceso: ' || SQLERRM;
+            ROLLBACK;
+        
     END UPDATE_USUARIO_ACCESO;
+
+    -- ELIMINAR USUARIO
+    PROCEDURE ELIMINAR_USUARIO(
+        USER_ID        IN COSMETICDEV.TA_USUARIOS.ID_USUARIO%TYPE,
+        USER_RESULTADO OUT NUMBER,
+         USER_MENSAJE   OUT VARCHAR2
+    )
+    AS
+    BEGIN
+        -- VALIDACIONES INICIALES
+        IF USER_ID IS NULL THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El ID del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        -- ELIMINAR USUARIO
+        DELETE FROM TA_USUARIOS WHERE ID_USUARIO = USER_ID;
+        
+        -- VALIDAR SI EL USUARIO EXISTE
+        IF SQL%ROWCOUNT = 0 THEN
+            USER_RESULTADO := CONS_USUARIO_NO_EXISTE;
+            USER_MENSAJE := 'El usuario con ID ' || USER_ID || ' no existe';
+            ROLLBACK;
+        ELSE
+            COMMIT;
+            USER_RESULTADO := CONS_EXITOSO;
+            USER_MENSAJE := 'Usuario eliminado correctamente';
+        END IF;
+    
+    EXCEPTION
+        WHEN OTHERS THEN
+            USER_RESULTADO := CONS_ERROR_GENERICO;
+            USER_MENSAJE := 'Error al eliminar usuario: ' || SQLERRM;
+            ROLLBACK;
+    END ELIMINAR_USUARIO;
 
            -- LISTAR TODOS LOS USUARIOS
     PROCEDURE LISTAR_USUARIOS(
@@ -165,11 +338,51 @@ CREATE OR REPLACE PACKAGE BODY PKG_USUARIOS AS
      	USER_MENSAJE   OUT VARCHAR2
     )
     AS
+     VL_ROL_EXISTS NUMBER;
     BEGIN
+
+         -- VALIDACIONES INICIALES
+        IF USER_ID IS NULL THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El ID del usuario es requerido';
+            RETURN;
+        END IF;
+        
+        IF USER_ID_ROL IS NULL THEN
+            USER_RESULTADO := CONS_ERROR_VALIDACION;
+            USER_MENSAJE := 'El ID del rol es requerido';
+            RETURN;
+        END IF;
+        
+        -- VALIDAR QUE EL ROL EXISTA
+        SELECT COUNT(*) INTO VL_ROL_EXISTS FROM TA_ROLES WHERE ID_ROL = USER_ID_ROL;
+        IF VL_ROL_EXISTS = 0 THEN
+            USER_RESULTADO := CONS_ROL_NO_EXISTE;
+            USER_MENSAJE := 'El rol especificado no existe';
+            RETURN;
+        END IF;
+        
+        -- ACTUALIZAR ROL
         UPDATE TA_USUARIOS SET ID_ROL = USER_ID_ROL, FECHA_ACTUALIZACION = SYSDATE
         WHERE ID_USUARIO = USER_ID;
         
-        COMMIT;
+        -- VALIDAR SI EL USUARIO EXISTE
+        IF SQL%ROWCOUNT = 0 THEN
+            USER_RESULTADO := CONS_USUARIO_NO_EXISTE;
+            USER_MENSAJE := 'El usuario con ID ' || USER_ID || ' no existe';
+            ROLLBACK;
+        ELSE
+            COMMIT;
+            USER_RESULTADO := CONS_EXITOSO;
+            USER_MENSAJE := 'Rol del usuario cambiado correctamente';
+        END IF;
+    
+    EXCEPTION
+        WHEN OTHERS THEN
+            USER_RESULTADO := CONS_ERROR_GENERICO;
+            USER_MENSAJE := 'Error al cambiar rol: ' || SQLERRM;
+            ROLLBACK;
+        
     END CAMBIAR_ROL_USUARIO;
 
 END PKG_USUARIOS;
